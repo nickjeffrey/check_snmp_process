@@ -1,0 +1,222 @@
+#!/bin/sh
+
+
+#
+# Nagios plugin for checking running processes on a Windows server via SNMP
+#
+
+# CHANGE LOG
+# ---------- 
+#  2012-07-16	Nick Jeffrey	Script created (based on check_snmp_load script by Yuann Lamy)
+#  2015-07-24	Nick Jeffrey	Add compatibility for AIX /usr/sbin/snmpinfo (instead of just /usr/bin/snmpwalk from Net-SNMP)
+
+
+
+
+# NOTES
+# ------
+# Description : Check processes using SNMP
+# Licence : GNU General Public License version 2  http://www.gnu.org/licenses/gpl-2.0.html
+# 
+# It is assumed that the nagios server has the snmpwalk binary from Net-SNMP or the /usr/bin/snmpinfo binary on AIX
+#
+# You will need to create a section similar to following in the commands.cfg file:
+#   # 'check_snmp_process' command definition
+#   define command{
+#           command_name    check_snmp_process
+#           command_line    $USER1$/check_snmp_process -H $HOSTADDRESS$ -C $ARG1$ -m $ARG2$ -x $ARG3$ -p $ARG4$
+#           }
+#
+# You will need to create a section similar to the following in the services.cfg file:
+#   # Define a service to check for a running process on a Windows box over SNMP
+#   # We feed this check 4 parameters: SNMP_community_name,min_processes,max_processes,process_name
+#   define service{
+#        use                             generic-24x7-service
+#        host_name                       pcced1mc01
+#        service_description             IBM DS Storage Manager process
+#        notification_period             8x5
+#        check_command                   check_snmp_process!public!1!1!SMmonitor.exe
+#
+#
+#
+# Please note that the /usr/bin/snmpwalk binary will accept OID values in either of the following formats:
+#    1.3.6.1.2.1.25.4.2.1.2		
+#   .1.3.6.1.2.1.25.4.2.1.2		(note the leading . character)
+# However, the /usr/sbin/snmpinfo binary from AIX does not like the leading dot in the OID,
+# so be sure you specify the OID variable without the leading dot.
+
+
+
+# FUTURE ENHANCEMENTS
+# -------------------
+# Allow multiple process names to be specified
+# Allow wildcards in process names
+
+
+
+
+# Commands
+SNMPWALK=/usr/bin/snmpwalk
+SNMPINFO=/usr/sbin/snmpinfo
+GREP=/bin/grep
+WC=/usr/bin/wc
+SED=/usr/bin/sed
+CHECK_NAME=check_snmp_process
+OID=1.3.6.1.2.1.25.4.2.1.2			# these are the running processes from .iso.org.dod.internet.mgmt.mib-2.host.hrSWRun
+
+# nagios return codes
+OK=0
+WARNING=1
+CRITICAL=2
+UNKNOWN=3
+
+
+
+
+# Default options
+COMMUNITY=public
+HOSTNAME=127.0.0.1
+MIN=1
+MAX=1
+
+
+
+
+# Perform some sanity checks
+if [ ! -f $SNMPWALK ]; then
+   if [ ! -f $SNMPINFO ]; then
+      echo "$CHECK_NAME CRITICAL - cannot find $SNMPWALK or $SNMPINFO binary"
+      exit $CRITICAL
+   fi
+fi
+if [ -f $SNMPWALK ]; then
+   if [ ! -x $SNMPWALK ]; then
+      echo "$CHECK_NAME CRITICAL - $SNMPWALK is not executable by the current user"
+      exit $CRITICAL
+   fi
+fi
+if [ -f $SNMPINFO ]; then
+   if [ ! -x $SNMPINFO ]; then
+      echo "$CHECK_NAME CRITICAL - $SNMPINFO is not executable by the current user"
+      exit $CRITICAL
+   fi
+fi
+if [ ! -f $GREP ]; then
+   echo "$CHECK_NAME CRITICAL - $GREP binary cannot be found"
+   exit $CRITICAL
+fi
+if [ ! -x $GREP ]; then
+   echo "$CHECK_NAME CRITICAL - $GREP is not executable by the current user"
+   exit $CRITICAL
+fi
+if [ ! -f $WC ]; then
+   echo "$CHECK_NAME CRITICAL - $WC binary cannot be found"
+   exit $CRITICAL
+fi
+if [ ! -x $WC ]; then
+   echo "$CHECK_NAME CRITICAL - $WC is not executable by the current user"
+   exit $CRITICAL
+fi
+if [ ! -f $SED ]; then
+   echo "$CHECK_NAME CRITICAL - $SED binary cannot be found"
+   exit $CRITICAL
+fi
+if [ ! -x $SED ]; then
+   echo "$CHECK_NAME CRITICAL - $SED is not executable by the current user"
+   exit $CRITICAL
+fi
+
+
+
+
+
+# Option processing
+print_usage() {
+  echo "Usage: ./check_snmp_process -H 127.0.0.1 -C public -m 1 -x 2 -p winlogon.exe"
+  echo "  $SCRIPTNAME -H ADDRESS"
+  echo "  $SCRIPTNAME -C STRING"
+  echo "  $SCRIPTNAME -m INTEGER for minimum number of instances of process"
+  echo "  $SCRIPTNAME -x INTEGER for maximum number of instances of process"
+  echo "  $SCRIPTNAME -p processname"
+  echo "  $SCRIPTNAME -h"
+
+}
+
+
+
+print_help() {
+  print_version
+  echo ""
+  print_usage
+  echo ""
+  echo "Check the running processes"
+  echo ""
+  echo "-H ADDRESS"
+  echo "   Name or IP address of host (default: 127.0.0.1)"
+  echo "-C STRING"
+  echo "   Community name for the host SNMP agent (default: public)"
+  echo "-m INTEGER"
+  echo "   Minimum number of instances of the process that should be running (default: 0)"
+  echo "-x INTEGER"
+  echo "   Maximum number of instances of the process that should be running (default: 0)"
+  echo "-p processname"
+  echo "   Name of the process you are looking for"
+  echo "-h"
+  echo "   Print this help screen"
+  echo ""
+  echo ""
+  echo "This plugin uses the 'snmpwalk' command included with the NET-SNMP package, or /usr/sbin/snmpinfo bundled with AIX ."
+  echo "This plugin support performance data output."
+  echo "If the min and max are not specified, the script will assume a minimum of 1 and a maximum of 1"
+}
+
+
+
+# Confirm the user entered the appropriate command line switches
+while getopts H:C:m:x:p:h OPT
+do
+  case $OPT in
+    H) HOSTNAME="$OPTARG" ;;
+    C) COMMUNITY="$OPTARG" ;;
+    m) MIN=$OPTARG ;;
+    x) MAX=$OPTARG ;;
+    p) PROCESS=$OPTARG ;;
+    h)
+      print_help
+      exit $OK
+      ;;
+   esac
+done
+
+
+
+# Connect to the remote host via SNMP to check the running processes
+# set the appropriate parameters for the command
+if [ -f $SNMPWALK ]; then
+   RESULT=`$SNMPWALK -v 1    -c $COMMUNITY    $HOSTNAME $OID | $GREP $PROCESS | $WC -l | $SED -e 's/ //g'`
+fi
+if [ -f $SNMPINFO ]; then
+   RESULT=`$SNMPINFO -m dump -c $COMMUNITY -h $HOSTNAME $OID | $GREP $PROCESS | $WC -l | $SED -e 's/ //g'`
+fi
+
+
+# Figure out how many instances of the process are running
+if [ $RESULT -lt $MIN ]; then
+   echo "$CHECK_NAME CRITICAL - there are $RESULT instances of the $PROCESS process running.  Should be a minimum of $MIN and maximum of $MAX."
+   exit $CRITICAL
+fi
+
+if [ $RESULT -gt $MAX ]; then
+   echo "$CHECK_NAME CRITICAL - there are $RESULT instances of the $PROCESS process running.  Should be a minimum of $MIN and maximum of $MAX."
+   exit $CRITICAL
+fi
+
+if [ $RESULT -ge $MIN ] && [ $RESULT -le $MAX ]; then
+   echo "$CHECK_NAME OK - there are $RESULT instances of the $PROCESS process running.  Should be a minimum of $MIN and maximum of $MAX."
+   exit $OK
+fi
+
+
+# We should never get this far
+echo "$CHECK_NAME UNKNOWN - Could not determine number of $PROCESS processes running."
+exit $UNKNOWN

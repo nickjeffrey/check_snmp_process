@@ -7,8 +7,9 @@
 
 # CHANGE LOG
 # ---------- 
-#  2012-07-16	Nick Jeffrey	Script created (based on check_snmp_load script by Yuann Lamy)
-#  2015-07-24	Nick Jeffrey	Add compatibility for AIX /usr/sbin/snmpinfo (instead of just /usr/bin/snmpwalk from Net-SNMP)
+#  2012-07-16	njeffrey	Script created (based on check_snmp_load script by Yuann Lamy)
+#  2015-07-24	njeffrey	Add compatibility for AIX /usr/sbin/snmpinfo (instead of just /usr/bin/snmpwalk from Net-SNMP)
+#  2022-05-12	njeffrey	Add nagios performace data to output
 
 
 
@@ -81,7 +82,6 @@ MAX=1
 
 
 
-
 # Perform some sanity checks
 if [ ! -f $SNMPWALK ]; then
    if [ ! -f $SNMPINFO ]; then
@@ -133,8 +133,8 @@ fi
 # Option processing
 print_usage() {
   echo "Usage: ./check_snmp_process -H 127.0.0.1 -C public -m 1 -x 2 -p winlogon.exe"
-  echo "  $SCRIPTNAME -H ADDRESS"
-  echo "  $SCRIPTNAME -C STRING"
+  echo "  $SCRIPTNAME -H HOSTADDRESS"
+  echo "  $SCRIPTNAME -C COMMUNITYSTRING"
   echo "  $SCRIPTNAME -m INTEGER for minimum number of instances of process"
   echo "  $SCRIPTNAME -x INTEGER for maximum number of instances of process"
   echo "  $SCRIPTNAME -p processname"
@@ -189,6 +189,13 @@ do
 done
 
 
+# Nagios performance data
+# The format is:  label=value[UOM];[warn];[crit];[min];[max]
+# On the "label=value" section is required.  The warn|crit|min|max entries are optional.
+# You can have multiple items of perf data, just separate each section with a space
+# UOM is Units Of Measurement.    Can be s=seconds B=bytes MB=megabytes %=percent c=counter
+
+
 
 # Connect to the remote host via SNMP to check the running processes
 # set the appropriate parameters for the command
@@ -202,17 +209,17 @@ fi
 
 # Figure out how many instances of the process are running
 if [ $RESULT -lt $MIN ]; then
-   echo "$CHECK_NAME CRITICAL - there are $RESULT instances of the $PROCESS process running.  Should be a minimum of $MIN and maximum of $MAX."
+   echo "$CHECK_NAME CRITICAL - there are $RESULT instances of the $PROCESS process running.  Should be a minimum of $MIN and maximum of $MAX. | $PROCESS=$RESULT;;;$MIN;$MAX"
    exit $CRITICAL
 fi
 
 if [ $RESULT -gt $MAX ]; then
-   echo "$CHECK_NAME CRITICAL - there are $RESULT instances of the $PROCESS process running.  Should be a minimum of $MIN and maximum of $MAX."
+   echo "$CHECK_NAME CRITICAL - there are $RESULT instances of the $PROCESS process running.  Should be a minimum of $MIN and maximum of $MAX. | $PROCESS=$RESULT;;;$MIN;$MAX"
    exit $CRITICAL
 fi
 
 if [ $RESULT -ge $MIN ] && [ $RESULT -le $MAX ]; then
-   echo "$CHECK_NAME OK - there are $RESULT instances of the $PROCESS process running.  Should be a minimum of $MIN and maximum of $MAX."
+   echo "$CHECK_NAME OK - there are $RESULT instances of the $PROCESS process running.  Should be a minimum of $MIN and maximum of $MAX. | $PROCESS=$RESULT;;;$MIN;$MAX"
    exit $OK
 fi
 
@@ -220,3 +227,6 @@ fi
 # We should never get this far
 echo "$CHECK_NAME UNKNOWN - Could not determine number of $PROCESS processes running."
 exit $UNKNOWN
+
+
+

@@ -19,13 +19,13 @@ define service{
      check_command                   check_snmp_process!public!1!2!vmtoolsd.exe
      }
 
-# Define a service to check for the /usr/sbin/dhcpd process on a Linux box
+# Define a service to check for the dhcpd process on a Linux box
 # We feed this check 4 parameters: SNMP_community_name,min_processes,max_processes,process_name
 define service{
      use                             generic-24x7-service
      host_name                       dhcp01.example.com
      service_description             dhcpd proces
-     check_command                   check_snmp_process!public!1!2!/usr/sbin/dhcpd
+     check_command                   check_snmp_process!public!1!2!dhcpd
      }
 ```
 
